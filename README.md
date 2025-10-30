@@ -11,7 +11,7 @@ https://github.com/user-attachments/assets/ef01c059-cfbd-4bf8-b73d-bb0a8d9a99e8
 
 # Setup
 1. game window 1600x900
-2. window system dispaly : 1920x1080 , 100%
+2. window system dispaly : 1920x1080
 3. window system dispaly scaling : 100%
 4. window system Refresh Rate : 144HZ 
 
