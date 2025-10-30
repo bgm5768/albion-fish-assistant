@@ -10,13 +10,8 @@ import cv2
 
 # --- Resource Path Utility (Crucial for PyInstaller) ---
 def resource_path(relative_path):
-    """
-    PyInstaller 환경과 일반 Python 환경 모두에서 리소스 파일의 절대 경로를 반환합니다.
-    """
     if hasattr(sys, '_MEIPASS'):
-        # PyInstaller 환경
         return os.path.join(sys._MEIPASS, relative_path)
-    # 개발 환경
     return os.path.join(os.path.abspath("."), relative_path)
 # --- End of Resource Path Utility ---
 
@@ -232,18 +227,13 @@ class FishingBotFrame(wx.Frame):
         # NEW: 3D Fish Logo Canvas (NO STATIC BOX BORDER)
         # ----------------------------------------
         FISH_GL_SIZE = (200, 150)
-        # FishGLCanvas를 사용할 수 있는지 확인합니다.
         if 'FishGLCanvas' in globals():
             self.fish_canvas = FishGLCanvas(self.settings_panel, size=FISH_GL_SIZE)
             
-            # 캔버스를 중앙에 배치하기 위한 HBox
             canvas_hbox = wx.BoxSizer(wx.HORIZONTAL)
             canvas_hbox.AddStretchSpacer(1)
-            # GLCanvas가 sizer 내에서 잘못 크기가 조정되는 것을 방지하기 위해 FIXED_MINSIZE 사용
             canvas_hbox.Add(self.fish_canvas, 0, wx.ALL | wx.FIXED_MINSIZE, 5) 
             canvas_hbox.AddStretchSpacer(1)
-            
-            # StaticBox 대신 canvas_hbox를 바로 vbox에 추가하여 깔끔하게 표시
             vbox.Add(canvas_hbox, 0, wx.EXPAND | wx.ALL, 5)
         # ----------------------------------------
 
