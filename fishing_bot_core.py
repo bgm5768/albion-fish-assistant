@@ -35,7 +35,7 @@ class FishingBotCore:
     MINIGAME_BAR_TEMPLATE_FILENAME = "minigame_bar_template.png" # Template for the entire minigame bar
     
     # Minigame timeout (set to 1 minute)
-    MINIGAME_TIMEOUT = 60
+    MINIGAME_TIMEOUT = 120
     
     # Minigame constants (based on blog logic)
     ROLL_LIMIT = 400                       # RGB sum threshold (standard for bright area detection)
