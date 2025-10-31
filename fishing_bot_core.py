@@ -570,8 +570,8 @@ class FishingBotCore:
 
                 if not initial_check_success:
                     if self.is_running.is_set():
-                        self.log(f"⚠️ Initial bobber landing detection failed. Recasting in 3 seconds.")
-                        time.sleep(3.0)
+                        self.log(f"⚠️ Initial bobber landing detection failed. Recasting in 1 seconds.")
+                        time.sleep(1.0)
                     if not self.is_running.is_set(): break
                     continue
                 
