@@ -431,7 +431,7 @@ class FishingBotCore:
             result = cv2.matchTemplate(gray_img, self.minigame_bar_template, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, max_loc = cv2.minMaxLoc(result)
             
-            if max_val >= 0.8:
+            if max_val >= 0.75:
                 x, y = max_loc
                 region = (x, y, t_w, t_h)
                 self.current_minigame_region = region # Store in class variable
@@ -642,7 +642,7 @@ class FishingBotCore:
                         
                         # Wait briefly if not found
                         time.sleep(self.BAR_SEARCH_INTERVAL)
-                        self.log(f"   [Bar Detection] Failed. {attempt+1} / {self.MAX_BAR_SEARCH_ATTEMPTS} retrying...")
+                        self.log(f"  [Bar Detection] Failed. {attempt+1} / {self.MAX_BAR_SEARCH_ATTEMPTS} retrying...")
                     
                     if bar_region is None:
                         self.log("🛑 Minigame bar detection failed finally! Skipping minigame.")
