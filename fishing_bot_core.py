@@ -32,7 +32,6 @@ class FishingBotCore:
     
     # Template filenames
     TEMPLATE_FILENAME = "bobber_template.png"              # Template for the bobber floating on water
-    MINIGAME_BAR_TEMPLATE_FILENAME = "minigame_bar_template.png" # Template for the entire minigame bar
     
     # Minigame timeout (set to 1 minute)
     MINIGAME_TIMEOUT = 120
@@ -62,7 +61,6 @@ class FishingBotCore:
         
         # --- Template Loading ---
         self.bobber_template = self._load_template(self.TEMPLATE_FILENAME)
-        self.minigame_bar_template = self._load_template(self.MINIGAME_BAR_TEMPLATE_FILENAME)
 
         # --- State Management ---
         self.is_running = threading.Event()
@@ -153,10 +151,6 @@ class FishingBotCore:
     def start_bot(self):
         if self.is_running.is_set():
              return
-
-        if self.bobber_template is None or self.minigame_bar_template is None:
-            self.log("🛑 Bot start failed: Some template images are missing.")
-            return
 
         if not self.casting_area_ref["area"]:
             self.log("🛑 Bot start failed: Fishing area is not set.")
@@ -410,34 +404,6 @@ class FishingBotCore:
         
         return monitor_roi, offset_rel_to_full
 
-    # --- Find Minigame Bar Region ---
-    def _find_minigame_bar_region(self):
-        """Searches the entire screen for the minigame bar using template matching and returns the absolute region (x, y, w, h)."""
-        if self.minigame_bar_template is None:
-            self.log("🛑 Minigame bar template is not loaded.")
-            return None
-
-        t_w, t_h = self.minigame_bar_template.shape[::-1]
-        
-        with mss.mss() as sct_local:
-            monitor_full = sct_local.monitors[0]
-            full_screenshot = sct_local.grab(monitor_full)
-            
-            img_array = np.array(full_screenshot, dtype=np.uint8)
-            img_array_bgr = cv2.cvtColor(img_array, cv2.COLOR_BGRA2BGR)
-            gray_img = cv2.cvtColor(img_array_bgr, cv2.COLOR_BGR2GRAY)
-            
-            # Change MATCH_THRESHOLD to 0.5 (0.5 is appropriate if the template matches well)
-            result = cv2.matchTemplate(gray_img, self.minigame_bar_template, cv2.TM_CCOEFF_NORMED)
-            _, max_val, _, max_loc = cv2.minMaxLoc(result)
-            
-            if max_val >= 0.75:
-                x, y = max_loc
-                region = (x, y, t_w, t_h)
-                self.current_minigame_region = region # Store in class variable
-                return region
-                
-            return None
 
     # --- Minigame Loop (based on blog rolling() logic) ---
     def minigame_loop(self):
