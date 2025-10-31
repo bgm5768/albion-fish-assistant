@@ -52,6 +52,9 @@ class FishingBotCore:
 
     ROI_PADDING = 50
 
+    minigame_click_base_x = None
+    minigame_click_base_y = None
+
     # --- Bot State Variables ---
     def __init__(self, casting_area_ref, log_callback=None, debug_img_callback=None, game_window_title="Albion Online Client"):
         self.casting_area_ref = casting_area_ref
@@ -405,7 +408,6 @@ class FishingBotCore:
         return monitor_roi, offset_rel_to_full
 
 
-    # --- Minigame Loop (based on blog rolling() logic) ---
     def minigame_loop(self):
         """Implements the rolling() function logic from the blog (reflects 1/3 probability delay upon reeling release)"""
         # self.log("🕹️ Starting minigame automation (based on blog logic)...") # Commented out for loop speed
@@ -420,15 +422,42 @@ class FishingBotCore:
             return False
 
         # Call mouseUp just in case of a previous click
+        # Note: mouseUp without coordinates uses the current position.
         pyautogui.mouseUp(button='left')
         
-        # Absolute coordinates of the bar
-
+        # Absolute coordinates of the bar (used for screen capture, not mouse control base)
         x_bar = 717 
         y_bar = 490
         w_bar = 206
         
+        # --- Randomness Calculation for Click Position (±5 pixels) ---
+        # Get the current position before the loop starts to use as the base for the randomized click offset.
+        try:
+            current_x, current_y = pyautogui.position()
+        except Exception:
+            # Fallback coordinates if position() fails or is slow (Using bar center as a sensible fallback)
+            current_x, current_y = x_bar + w_bar // 2, y_bar 
+
+        # Store the base coordinates to apply the offset to
+        self.minigame_click_base_x = current_x
+        self.minigame_click_base_y = current_y
+
+        self._last_offset_update_time = 0.0
+        self._current_rand_offset_x = 0
+        self._current_rand_offset_y = 0
+        self.OFFSET_UPDATE_INTERVAL = 2.0 
+        # -----------------------------------------------------------
+        
         while self.is_running.is_set() and (time.time() - minigame_start_time) < self.MINIGAME_TIMEOUT:
+            
+            # --- 2초마다 오프셋 갱신 로직 ---
+            current_time = time.time()
+            if current_time - self._last_offset_update_time > self.OFFSET_UPDATE_INTERVAL:
+                self._current_rand_offset_x = random.randint(-5, 5)
+                self._current_rand_offset_y = random.randint(-5, 5)
+                self._last_offset_update_time = current_time
+                # self.log(f" [Offset] Updated to ({self._current_rand_offset_x}, {self._current_rand_offset_y})") # 디버깅용
+            # -------------------------------
             
             # Calculate capture region
             center_x = x_bar + w_bar // 2
@@ -457,17 +486,25 @@ class FishingBotCore:
                         
                         found_bright_pixel = True
                         
+                        # --- Apply STABLE Random Offset to Click Coordinates ---
+                        # 2초마다 갱신된 고정된 오프셋 사용
+                        click_x = self.minigame_click_base_x + self._current_rand_offset_x
+                        click_y = self.minigame_click_base_y + self._current_rand_offset_y
+                        # ------------------------------------------------------
+
                         if i <= self.MINIGAME_REEL_STOP_X:
-                            pyautogui.mouseDown(button='left')
+                            # 🚨 Reeling (Hold): Use stable randomized coordinates
+                            pyautogui.mouseDown(button='left', x=click_x, y=click_y)
                             
                         elif i > self.MINIGAME_REEL_STOP_X:
                             # Release reeling
-                            pyautogui.mouseUp(button='left')
+                            # 🚨 Release: Use stable randomized coordinates
+                            pyautogui.mouseUp(button='left', x=click_x, y=click_y)
                             
                             # 🚨 Apply 0.2~0.3 second delay with 1/3 probability after reeling release (hold)
                             if random.random() < (1/3):
                                 delay = random.uniform(0.2, 0.3)
-                                # self.log(f"   [Minigame] Applying random delay: {delay:.2f}s") # Commented out for loop speed
+                                # self.log(f"   [Minigame] Applying random delay: {delay:.2f}s") # Commented out for loop speed
                                 time.sleep(delay)
                             
                         break
@@ -475,21 +512,28 @@ class FishingBotCore:
                 
                 # When scanning to the end without finding a bright pixel (window closed due to minigame success/failure)
                 if not found_bright_pixel:
-                    pyautogui.mouseUp(button='left')
-                    pyautogui.leftClick() # Interpreted as clicking the fishing end button (safe reeling release)
+                    # Final mouseUp and click using the stored base coordinates for consistency
+                    final_x = self.minigame_click_base_x
+                    final_y = self.minigame_click_base_y
+                    
+                    pyautogui.mouseUp(button='left', x=final_x, y=final_y)
+                    pyautogui.leftClick(x=final_x, y=final_y) # Interpreted as clicking the fishing end button (safe reeling release)
                     self.log("🎉 Target area disappearance detected! Minigame loop terminated.")
                     return True
                 
             except Exception as e:
                 self.log(f"Minigame tracking error: {e}")
-                pyautogui.mouseUp(button='left')
+                # Use base coordinates for safe mouseUp on error
+                pyautogui.mouseUp(button='left', x=self.minigame_click_base_x, y=self.minigame_click_base_y)
                 return False
             
             time.sleep(0.001)
 
         self.log("🛑 Minigame timeout or stop requested.")
-        pyautogui.mouseUp(button='left')
+        # Use base coordinates for safe mouseUp on timeout
+        pyautogui.mouseUp(button='left', x=self.minigame_click_base_x, y=self.minigame_click_base_y)
         return False
+
 
     # --- Main Loop ---
     def fishing_loop(self):
