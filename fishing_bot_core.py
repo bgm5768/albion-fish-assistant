@@ -445,17 +445,18 @@ class FishingBotCore:
         self._last_offset_update_time = 0.0
         self._current_rand_offset_x = 0
         self._current_rand_offset_y = 0
-        self.OFFSET_UPDATE_INTERVAL = 2.0 
+        self.OFFSET_UPDATE_INTERVAL = random.uniform(2, 5) 
         # -----------------------------------------------------------
         
         while self.is_running.is_set() and (time.time() - minigame_start_time) < self.MINIGAME_TIMEOUT:
             
-            # --- 2초마다 오프셋 갱신 로직 ---
             current_time = time.time()
             if current_time - self._last_offset_update_time > self.OFFSET_UPDATE_INTERVAL:
                 self._current_rand_offset_x = random.randint(-5, 5)
                 self._current_rand_offset_y = random.randint(-5, 5)
                 self._last_offset_update_time = current_time
+            else:
+                self.OFFSET_UPDATE_INTERVAL = random.uniform(2, 5)
                 # self.log(f" [Offset] Updated to ({self._current_rand_offset_x}, {self._current_rand_offset_y})") # 디버깅용
             # -------------------------------
             
