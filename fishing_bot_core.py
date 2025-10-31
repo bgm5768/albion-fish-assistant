@@ -51,6 +51,8 @@ class FishingBotCore:
     
     BOBBER_SEARCH_RADIUS = 30
 
+    ROI_PADDING = 50
+
     # --- Bot State Variables ---
     def __init__(self, casting_area_ref, log_callback=None, debug_img_callback=None, game_window_title="Albion Online Client"):
         self.casting_area_ref = casting_area_ref
@@ -192,7 +194,7 @@ class FishingBotCore:
     # --- Bobber Detection and Bite Detection Logic ---
     def _get_bobber_image(self):
         """
-        Captures the fishing area and finds the bobber using template matching.
+        Captures the fishing area (or ROI) and finds the bobber using template matching.
         Uses dynamic ROI if a previous position is known for faster detection.
         """
         area = self.casting_area_ref["area"]
@@ -202,40 +204,41 @@ class FishingBotCore:
         x_root, y_root, w_root, h_root = area
         t_w, t_h = self.bobber_template.shape[::-1]
         
+        monitor_to_use = None
+        offset_x, offset_y = 0, 0
+        search_full_area = True # 기본값은 전체 영역 검색
+
         # 1. Determine Capture Monitor and Offset
-        offset_x_rel_to_full = 0
-        offset_y_rel_to_full = 0
-        
         # Try to use ROI if previous successful position exists
         if self.previous_bobber_image and self.previous_bobber_image[2]:
             last_center_rel = self.previous_bobber_image[2]
-            monitor_roi, offset = self._get_roi_monitor(area, last_center_rel, self.BOBBER_SEARCH_RADIUS)
+            monitor_roi, offset = self._get_roi_coordinates(area, last_center_rel, self.ROI_PADDING)
             
             if monitor_roi:
                 monitor_to_use = monitor_roi
-                offset_x_rel_to_full, offset_y_rel_to_full = offset
-            else:
-                # Fallback to full casting area if ROI calculation failed
-                monitor_to_use = {"top": y_root, "left": x_root, "width": w_root, "height": h_root}
-        else:
-            # Use full casting area for initial detection
+                offset_x, offset_y = offset
+                search_full_area = False # ROI 검색 모드
+        
+        if search_full_area:
+            # ROI가 없거나 실패하면 전체 영역 검색
             monitor_to_use = {"top": y_root, "left": x_root, "width": w_root, "height": h_root}
+            offset_x, offset_y = 0, 0
 
         # 2. Capture Screenshot and Process
         with mss.mss() as sct_local:
             try:
                 # Capture the defined area (either full area or ROI)
-                full_screenshot = sct_local.grab(monitor_to_use)
+                capture_img = sct_local.grab(monitor_to_use)
                 
-                img_array = np.array(full_screenshot, dtype=np.uint8)
+                img_array = np.array(capture_img, dtype=np.uint8)
                 img_array_bgr = cv2.cvtColor(img_array, cv2.COLOR_BGRA2BGR)
                 gray_img = cv2.cvtColor(img_array_bgr, cv2.COLOR_BGR2GRAY)
                 
                 result = cv2.matchTemplate(gray_img, self.bobber_template, cv2.TM_CCOEFF_NORMED)
                 _, max_val, _, max_loc = cv2.minMaxLoc(result)
                 
-                best_rect = None
-                bobber_center = None
+                best_rect_rel_full = None
+                bobber_center_rel_full = None
                 
                 if max_val >= self.MATCH_THRESHOLD:
                     # Coordinates are relative to the monitor_to_use area
@@ -244,99 +247,52 @@ class FishingBotCore:
                     w, h = t_w, t_h
                     
                     # Convert coordinates back to being relative to the full casting area (x_root, y_root)
-                    x_full_rel = x_roi + offset_x_rel_to_full
-                    y_full_rel = y_roi + offset_y_rel_to_full
+                    x_full_rel = x_roi + offset_x
+                    y_full_rel = y_roi + offset_y
                     
-                    best_rect = (x_full_rel, y_full_rel, w, h)
+                    best_rect_rel_full = (x_full_rel, y_full_rel, w, h)
                     
                     x_center = x_full_rel + w // 2
                     y_center = y_full_rel + h // 2
-                    bobber_center = (x_center, y_center)
-                    self.consecutive_match_fail_count = 0
-                
-                
-                # Generate debug image (always capture the full casting area for consistent UI output)
-                monitor_root = {"top": y_root, "left": x_root, "width": w_root, "height": h_root}
-                full_pil_img = Image.fromarray(cv2.cvtColor(
-                    np.array(sct_local.grab(monitor_root), dtype=np.uint8)[:,:,:3], 
-                    cv2.COLOR_BGR2RGB))
-                
-                debug_img = full_pil_img.copy()
-                draw = ImageDraw.Draw(debug_img)
-                
-                if best_rect:
-                    x, y, w, h = best_rect
-                    draw.rectangle([x, y, x + w, y + h], outline=(0, 255, 0), width=2)
-                else:
-                    self.consecutive_match_fail_count += 1
-                    cx, cy = w_root // 2, h_root // 2
-                    draw.rectangle([cx-10, cy-10, cx+10, cy+10], outline=(255, 0, 0), width=2)
-                    draw.text((10, 10), f"Match FAIL ({max_val:.2f})", fill=(255, 0, 0))
-
-                self.debug_img_callback(debug_img)
-
-                if best_rect:
-                    # Returns a grayscale cropped image around the bobber.
-                    bobber_crop_pil = full_pil_img.crop((x, y, x + w, y + h)).convert('L')
-                    return bobber_crop_pil, (t_w, t_h), bobber_center
-                
-                return None, None, None
-
-            except Exception as e:
-                self.log(f"Error during capture and template matching: {e}")
-                if area:
-                    self.debug_img_callback(Image.new('RGB', (w_root, h_root), color = 'black'))
-                return None, None, None
-
-        x_root, y_root, w_root, h_root = area
-        t_w, t_h = self.bobber_template.shape[::-1]
-
-        with mss.mss() as sct_local:
-            try:
-                monitor_root = {"top": y_root, "left": x_root, "width": w_root, "height": h_root}
-                full_screenshot = sct_local.grab(monitor_root)
-                
-                img_array = np.array(full_screenshot, dtype=np.uint8)
-                img_array_bgr = cv2.cvtColor(img_array, cv2.COLOR_BGRA2BGR)
-                gray_img = cv2.cvtColor(img_array_bgr, cv2.COLOR_BGR2GRAY)
-                
-                result = cv2.matchTemplate(gray_img, self.bobber_template, cv2.TM_CCOEFF_NORMED)
-                _, max_val, _, max_loc = cv2.minMaxLoc(result)
-                
-                best_rect = None
-                bobber_center = None
-                
-                if max_val >= self.MATCH_THRESHOLD:
-                    top_left = max_loc
-                    x, y = top_left
-                    w, h = t_w, t_h
-                    best_rect = (x, y, w, h)
+                    bobber_center_rel_full = (x_center, y_center)
                     
-                    x_center = x + w // 2
-                    y_center = y + h // 2
-                    bobber_center = (x_center, y_center)
                     self.consecutive_match_fail_count = 0
                 
                 
-                # Generate debug image
-                full_pil_img = Image.fromarray(cv2.cvtColor(img_array_bgr, cv2.COLOR_BGR2RGB))
-                debug_img = full_pil_img.copy()
+                # 3. Generate debug image (always capture the full casting area for consistent UI output)
+                monitor_root = {"top": y_root, "left": x_root, "width": w_root, "height": h_root}
+                full_screenshot_debug = sct_local.grab(monitor_root)
+                
+                img_array_debug = np.array(full_screenshot_debug, dtype=np.uint8)
+                img_array_bgr_debug = cv2.cvtColor(img_array_debug, cv2.COLOR_BGRA2BGR)
+                full_pil_img_debug = Image.fromarray(cv2.cvtColor(img_array_bgr_debug, cv2.COLOR_BGR2RGB))
+
+                
+                debug_img = full_pil_img_debug.copy()
                 draw = ImageDraw.Draw(debug_img)
                 
-                if best_rect:
+                if best_rect_rel_full:
+                    # 녹색 박스 (성공)
+                    x, y, w, h = best_rect_rel_full
                     draw.rectangle([x, y, x + w, y + h], outline=(0, 255, 0), width=2)
                 else:
                     self.consecutive_match_fail_count += 1
                     cx, cy = w_root // 2, h_root // 2
                     draw.rectangle([cx-10, cy-10, cx+10, cy+10], outline=(255, 0, 0), width=2)
                     draw.text((10, 10), f"Match FAIL ({max_val:.2f})", fill=(255, 0, 0))
+                
+                # ROI 검색 시 ROI 영역을 파란색으로 표시 (디버깅용)
+                if not search_full_area:
+                    draw.rectangle([offset_x, offset_y, offset_x + monitor_to_use["width"], offset_y + monitor_to_use["height"]], outline=(0, 0, 255), width=1)
+
 
                 self.debug_img_callback(debug_img)
 
-                if best_rect:
+                if best_rect_rel_full:
                     # Returns a grayscale cropped image around the bobber.
-                    bobber_crop_pil = full_pil_img.crop((x, y, x + w, y + h)).convert('L')
-                    return bobber_crop_pil, (t_w, t_h), bobber_center
+                    x, y, w, h = best_rect_rel_full
+                    bobber_crop_pil = full_pil_img_debug.crop((x, y, x + w, y + h)).convert('L')
+                    return bobber_crop_pil, (t_w, t_h), bobber_center_rel_full
                 
                 return None, None, None
 
@@ -345,6 +301,7 @@ class FishingBotCore:
                 if area:
                      self.debug_img_callback(Image.new('RGB', (w_root, h_root), color = 'black'))
                 return None, None, None
+
 
     def _check_for_bite(self):
         """
@@ -412,6 +369,47 @@ class FishingBotCore:
         self.log(f"✅ Fishing bobber cast complete. Hold time: {hold_time:.2f} seconds.")
         pyautogui.moveTo(self.SAFE_MOUSE_POS[0], self.SAFE_MOUSE_POS[1], duration=0.01)
 
+    def _get_roi_coordinates(self, full_area, last_center_rel, padding):
+        """
+        Calculates the screen coordinates for the ROI based on the last known position.
+        Returns the monitor dict for mss and the (x, y) offset within the full area.
+        """
+        x_root, y_root, w_root, h_root = full_area
+        
+        # Calculate desired ROI relative to the full area
+        roi_x_rel = last_center_rel[0] - padding
+        roi_y_rel = last_center_rel[1] - padding
+        roi_w = padding * 2
+        roi_h = padding * 2
+
+        # Clamp the ROI to the boundaries of the full casting area
+        
+        # X clamping
+        roi_x1_clamped = max(0, int(roi_x_rel))
+        roi_y1_clamped = max(0, int(roi_y_rel))
+        roi_x2_clamped = min(w_root, int(roi_x_rel + roi_w))
+        roi_y2_clamped = min(h_root, int(roi_y_rel + roi_h))
+
+        final_w = roi_x2_clamped - roi_x1_clamped
+        final_h = roi_y2_clamped - roi_y1_clamped
+
+        # If ROI is too small (e.g., bobber near edge), fallback to full area
+        if final_w < self.bobber_template.shape[1] or final_h < self.bobber_template.shape[0]:
+            return None, (0, 0) # Fallback indicator
+
+        # Absolute screen coordinates for mss
+        monitor_roi = {
+            "top": y_root + roi_y1_clamped, 
+            "left": x_root + roi_x1_clamped, 
+            "width": final_w, 
+            "height": final_h
+        }
+        
+        # Offset of the ROI relative to the full casting area
+        offset_rel_to_full = (roi_x1_clamped, roi_y1_clamped)
+        
+        return monitor_roi, offset_rel_to_full
+
     # --- Find Minigame Bar Region ---
     def _find_minigame_bar_region(self):
         """Searches the entire screen for the minigame bar using template matching and returns the absolute region (x, y, w, h)."""
@@ -433,7 +431,7 @@ class FishingBotCore:
             result = cv2.matchTemplate(gray_img, self.minigame_bar_template, cv2.TM_CCOEFF_NORMED)
             _, max_val, _, max_loc = cv2.minMaxLoc(result)
             
-            if max_val >= 0.5:
+            if max_val >= 0.8:
                 x, y = max_loc
                 region = (x, y, t_w, t_h)
                 self.current_minigame_region = region # Store in class variable
@@ -555,6 +553,8 @@ class FishingBotCore:
                 MAX_ATTEMPTS = 5
                 self.log("⏳ Attempting bobber landing and initial image detection...")
                 
+                self.previous_bobber_image = None
+
                 for attempt in range(MAX_ATTEMPTS):
                     current_bobber_image, current_search_size, current_center = self._get_bobber_image()
                     
