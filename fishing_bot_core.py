@@ -446,10 +446,6 @@ class FishingBotCore:
 
         minigame_start_time = time.time()
         
-        if self.current_minigame_region is None:
-            self.log("🛑 Minigame region is not set, cannot start loop.")
-            return False
-
         # Create local capture instance (to prevent thread errors)
         try:
             sct_local = mss.mss()
@@ -461,7 +457,10 @@ class FishingBotCore:
         pyautogui.mouseUp(button='left')
         
         # Absolute coordinates of the bar
-        x_bar, y_bar, w_bar, h_bar = self.current_minigame_region
+
+        x_bar = 717 
+        y_bar = 490
+        w_bar = 206
         
         while self.is_running.is_set() and (time.time() - minigame_start_time) < self.MINIGAME_TIMEOUT:
             
@@ -611,8 +610,8 @@ class FishingBotCore:
                          center_y_rel = self.previous_bobber_image[2][1]
 
                          # 🎣 Random offset (reduced to +-5 pixels for improved accuracy)
-                         offset_x = random.randint(-5, 5)
-                         offset_y = random.randint(-5, 5)
+                         offset_x = random.randint(-15, 15)
+                         offset_y = random.randint(-15, 15)
 
                          # Final click coordinates (absolute coordinates)
                          click_x = x_root + center_x_rel + offset_x
@@ -625,37 +624,12 @@ class FishingBotCore:
                          pyautogui.click()
                          self.log("✅ Last cast position click complete.")
 
+
+                    time.sleep(random.uniform(0.1, 0.3))
                     
-                    # 4-1. Find minigame bar position (retry logic added)
-                    self.log(f"🔍 Dynamically searching for minigame bar location (max {self.MAX_BAR_SEARCH_ATTEMPTS} retries)...")
-                    
-                    bar_region = None
-                    for attempt in range(self.MAX_BAR_SEARCH_ATTEMPTS):
-                        bar_region = self._find_minigame_bar_region()
-                        
-                        if bar_region is not None:
-                            self.current_minigame_region = bar_region
-                            self.log(f"✅ Minigame bar detection successful. (Attempt {attempt+1})")
-                            break
-                        
-                        if not self.is_running.is_set(): return
-                        
-                        # Wait briefly if not found
-                        time.sleep(self.BAR_SEARCH_INTERVAL)
-                        self.log(f"  [Bar Detection] Failed. {attempt+1} / {self.MAX_BAR_SEARCH_ATTEMPTS} retrying...")
-                    
-                    if bar_region is None:
-                        self.log("🛑 Minigame bar detection failed finally! Skipping minigame.")
-                        # Maintain 5.0 seconds wait time until the minigame window closes
-                        time.sleep(5.0)
-                        # Post-minigame failure process (move to the next fishing loop)
-                    else:
-                        # 4-2. Call minigame loop
-                        detection_delay = time.time() - start_time
-                        self.log(f"Delay: {detection_delay:.3f} seconds. Starting minigame.")
-                        self.minigame_loop()
-                    
-                    if not self.is_running.is_set(): break
+                    detection_delay = time.time() - start_time
+                    self.log(f"Delay: {detection_delay:.3f} seconds. Starting minigame.")
+                    self.minigame_loop()
 
                     # 4-3. Post-processing
                     self.log("🔑 Post-processing: Press Cancel key (S) and wait 1 second.")
